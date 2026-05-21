@@ -1,0 +1,19 @@
+# Firebase
+.firebase/
+firebase-debug.log
+ui-debug.log
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS and System Files
+Thumbs.db
+.DS_Store
+ehthumbs.db
+desktop.ini
