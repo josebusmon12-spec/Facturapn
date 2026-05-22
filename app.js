@@ -103,6 +103,25 @@ function updateSyncStatus(status, text) {
     syncStatusEl.classList.remove("online", "connecting", "offline", "error");
     syncStatusEl.classList.add(status);
     syncTextEl.textContent = text;
+
+    // Update the sync button in settings form
+    const fbSubmitBtn = document.querySelector("#firebase-config-form button[type='submit']");
+    if (fbSubmitBtn) {
+        if (status === "online") {
+            fbSubmitBtn.className = "btn btn-success";
+            fbSubmitBtn.innerHTML = '<i data-lucide="check-circle"></i> Sincronizado (Conectado)';
+        } else if (status === "connecting") {
+            fbSubmitBtn.className = "btn btn-outline";
+            fbSubmitBtn.innerHTML = '<i data-lucide="refresh-cw" class="spin"></i> Conectando...';
+        } else if (status === "error") {
+            fbSubmitBtn.className = "btn btn-danger";
+            fbSubmitBtn.innerHTML = '<i data-lucide="alert-triangle"></i> Error de Conexión';
+        } else {
+            fbSubmitBtn.className = "btn btn-primary";
+            fbSubmitBtn.innerHTML = '<i data-lucide="cloud-lightning"></i> Conectar y Sincronizar';
+        }
+        safeCreateIcons();
+    }
 }
 
 function initFirebase() {
@@ -133,7 +152,7 @@ function initFirebase() {
 
     function doInit() {
         let fbConfig = JSON.parse(localStorage.getItem("pr_firebase_config"));
-        if (!fbConfig || !fbConfig.apiKey || !fbConfig.projectId || fbConfig.projectId === "panificadora-rodriguez") {
+        if (!fbConfig || !fbConfig.apiKey || fbConfig.projectId !== "produccion-y-pago-pn") {
             // Configuración por defecto del proyecto Firebase
             fbConfig = {
                 apiKey: "AIzaSyDMPCQgP2C43SXMm74Zt9HG4Da9wqI9zFE",
@@ -444,6 +463,11 @@ const DOM = {
     collectInvoiceLabel: document.getElementById("collect-invoice-label"),
     collectCustomerLabel: document.getElementById("collect-customer-label"),
     collectAmountLabel: document.getElementById("collect-amount-label"),
+    collectTotalInvoiceLabel: document.getElementById("collect-total-invoice-label"),
+    collectTotalPaidLabel: document.getElementById("collect-total-paid-label"),
+    collectRemainingBalanceLabel: document.getElementById("collect-remaining-balance-label"),
+    collectPaymentsHistoryTbody: document.getElementById("collect-payments-history-tbody"),
+    collectAmountToPay: document.getElementById("collect-amount-to-pay"),
     collectMethod: document.getElementById("collect-method"),
     collectCashFields: document.getElementById("collect-cash-fields"),
     collectCashReceived: document.getElementById("collect-cash-received"),
@@ -754,7 +778,8 @@ function addToCart(itemId, type = "product") {
         }
         cartItem.quantity++;
     } else {
-        cart.push({ product: item, quantity: 1, type: type });
+        const selectedPriceType = DOM.posPriceType ? DOM.posPriceType.value : "price";
+        cart.push({ product: item, quantity: 1, type: type, priceType: selectedPriceType });
     }
     renderCart();
 }
@@ -781,7 +806,6 @@ function removeFromCart(productId) {
 function renderCart() {
     if (!DOM.cartItemsTbody) return;
     DOM.cartItemsTbody.innerHTML = "";
-    const selectedPriceType = DOM.posPriceType ? DOM.posPriceType.value : "price";
 
     if (cart.length === 0) {
         DOM.cartItemsTbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:#888; padding:30px;">Carrito vacío.</td></tr>`;
@@ -790,11 +814,22 @@ function renderCart() {
     }
 
     cart.forEach(item => {
-        const itemPrice = item.product[selectedPriceType] || item.product.price;
-        tr = document.createElement("tr");
+        const currentPriceType = item.priceType || "price";
+        const p1 = item.product.price || 0;
+        const p2 = item.product.price2 || p1;
+        const p3 = item.product.price3 || p1;
+        const itemPrice = item.product[currentPriceType] || p1;
+        
+        const tr = document.createElement("tr");
         tr.innerHTML = `
             <td><strong>${item.product.name}</strong><br><small>${item.product.code}</small></td>
-            <td>L ${itemPrice.toFixed(2)}</td>
+            <td>
+                <select class="cart-price-select" data-id="${item.product.id}">
+                    <option value="price" ${currentPriceType === 'price' ? 'selected' : ''}>Detalle: L ${p1.toFixed(2)}</option>
+                    <option value="price2" ${currentPriceType === 'price2' ? 'selected' : ''}>Mayorista: L ${p2.toFixed(2)}</option>
+                    <option value="price3" ${currentPriceType === 'price3' ? 'selected' : ''}>Especial: L ${p3.toFixed(2)}</option>
+                </select>
+            </td>
             <td><input type="number" class="form-control cart-qty-input" value="${item.quantity}" data-id="${item.product.id}"></td>
             <td><strong>L ${(itemPrice * item.quantity).toFixed(2)}</strong></td>
             <td><button class="btn btn-sm btn-danger btn-remove-cart" data-id="${item.product.id}">&times;</button></td>
@@ -804,21 +839,43 @@ function renderCart() {
 
     document.querySelectorAll(".cart-qty-input").forEach(i => i.addEventListener("change", (e) => updateCartQuantity(i.getAttribute("data-id"), e.target.value)));
     document.querySelectorAll(".btn-remove-cart").forEach(b => b.addEventListener("click", () => removeFromCart(b.getAttribute("data-id"))));
+    document.querySelectorAll(".cart-price-select").forEach(s => s.addEventListener("change", (e) => {
+        const productId = s.getAttribute("data-id");
+        const newPriceType = e.target.value;
+        const cartItem = cart.find(i => i.product.id === productId);
+        if (cartItem) {
+            cartItem.priceType = newPriceType;
+            renderCart();
+        }
+    }));
     calculateCartTotals();
 }
 
-if (DOM.posPriceType) DOM.posPriceType.addEventListener("change", renderCart);
+if (DOM.posPriceType) {
+    DOM.posPriceType.addEventListener("change", (e) => {
+        const val = e.target.value;
+        cart.forEach(item => {
+            item.priceType = val;
+        });
+        renderCart();
+    });
+}
 if (DOM.cartDiscount) DOM.cartDiscount.addEventListener("input", calculateCartTotals);
 
 function calculateCartTotals() {
-    const priceType = DOM.posPriceType ? DOM.posPriceType.value : "price";
-    let subtotal = cart.reduce((sum, item) => sum + ((item.product[priceType] || item.product.price) * item.quantity), 0);
+    let subtotal = cart.reduce((sum, item) => {
+        const pt = item.priceType || "price";
+        const price = item.product[pt] || item.product.price;
+        return sum + (price * item.quantity);
+    }, 0);
     let discount = DOM.cartDiscount ? parseFloat(DOM.cartDiscount.value) || 0 : 0;
     if (discount > subtotal) { discount = subtotal; DOM.cartDiscount.value = subtotal; }
 
     let gravado15 = 0, gravado18 = 0, exento = 0;
     cart.forEach(item => {
-        const lineTotal = (item.product[priceType] || item.product.price) * item.quantity;
+        const pt = item.priceType || "price";
+        const price = item.product[pt] || item.product.price;
+        const lineTotal = price * item.quantity;
         if (item.product.tax === "15%") gravado15 += lineTotal;
         else if (item.product.tax === "18%") gravado18 += lineTotal;
         else exento += lineTotal;
@@ -873,7 +930,6 @@ if (DOM.payCashReceived) {
 
 if (DOM.btnSubmitInvoice) {
     DOM.btnSubmitInvoice.addEventListener("click", () => {
-        const priceType = DOM.posPriceType ? DOM.posPriceType.value : "price";
         calculateCartTotals();
         const td = DOM._cartTaxData || { subtotal: 0, discount: 0, exento: 0, gravado15: 0, gravado18: 0, isv15: 0, isv18: 0, totalIsv: 0, total: 0 };
         const method = DOM.payMethod ? DOM.payMethod.value : "Efectivo";
@@ -887,19 +943,24 @@ if (DOM.btnSubmitInvoice) {
             time: new Date().toLocaleTimeString("es-HN", { hour12: false }),
             customerName: (DOM.posCustomerName && DOM.posCustomerName.value.trim()) ? DOM.posCustomerName.value.trim() : "Consumidor Final",
             customerRtn: (DOM.posCustomerRtn && DOM.posCustomerRtn.value.trim()) ? DOM.posCustomerRtn.value.trim() : "Opcional",
-            items: cart.map(i => ({ 
-                name: i.product.name, 
-                price: i.product[priceType] || i.product.price, 
-                quantity: i.quantity, 
-                tax: i.product.tax || "Exento",
-                category: i.product.category || (i.type === "churro" ? "Churro" : "Pan")
-            })),
+            items: cart.map(i => {
+                const pt = i.priceType || "price";
+                return { 
+                    name: i.product.name, 
+                    price: i.product[pt] || i.product.price, 
+                    quantity: i.quantity, 
+                    tax: i.product.tax || "Exento",
+                    category: i.product.category || (i.type === "churro" ? "Churro" : "Pan"),
+                    priceType: pt
+                };
+            }),
             subtotal: td.subtotal, discount: td.discount, exento: td.exento,
             gravado15: td.gravado15, gravado18: td.gravado18, isv15: td.isv15, isv18: td.isv18, totalIsv: td.totalIsv,
             total: td.total, paymentMethod: method, cashReceived: method === "Crédito" ? 0 : cashRec, cashChange: method === "Efectivo" ? (cashRec - td.total) : 0,
             cai: config.cai, ranges: `${config.rangeStart} a ${config.rangeEnd}`, deadline: config.deadline,
             closed: false, closureId: null,
             creditStatus: method === "Crédito" ? "Pendiente" : null,
+            creditPayments: [],
             creditPaidDate: null,
             creditPaidTime: null,
             creditPaidMethod: null,
@@ -1283,6 +1344,60 @@ if (DOM.btnClearInvoiceFilters) {
 // ==========================================
 // 10.2 CUENTAS POR COBRAR (CREDITS)
 // ==========================================
+function getCreditInvoiceTotalPaid(inv) {
+    if (inv.paymentMethod !== "Crédito") return 0;
+    if (inv.creditPayments && inv.creditPayments.length > 0) {
+        return inv.creditPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+    }
+    // Fallback legacy
+    if (inv.creditStatus === "Pagado") {
+        return inv.total;
+    }
+    return 0;
+}
+
+function getCreditInvoiceBalance(inv) {
+    if (inv.paymentMethod !== "Crédito") return 0;
+    return Math.max(0, inv.total - getCreditInvoiceTotalPaid(inv));
+}
+
+function getCreditRecoveredTotals(onlyActiveShift = false) {
+    let cash = 0;
+    let noncash = 0;
+    let count = 0;
+
+    invoices.forEach(inv => {
+        if (inv.paymentMethod !== "Crédito") return;
+
+        if (inv.creditPayments && inv.creditPayments.length > 0) {
+            inv.creditPayments.forEach(p => {
+                const matchShift = !onlyActiveShift || p.closureId === null;
+                if (matchShift) {
+                    if (p.method === "Efectivo") {
+                        cash += p.amount || 0;
+                    } else {
+                        noncash += p.amount || 0;
+                    }
+                    count++;
+                }
+            });
+        } else {
+            // Legacy / fallback if invoice is fully paid and has no creditPayments list
+            const matchShift = !onlyActiveShift || inv.creditPaidClosureId === null;
+            if (inv.creditStatus === "Pagado" && matchShift) {
+                if (inv.creditPaidMethod === "Efectivo") {
+                    cash += inv.total;
+                } else if (inv.creditPaidMethod) {
+                    noncash += inv.total;
+                }
+                count++;
+            }
+        }
+    });
+
+    return { cash, noncash, count };
+}
+
 function renderCreditInvoicesTable() {
     if (!DOM.creditTableTbody) return;
     DOM.creditTableTbody.innerHTML = "";
@@ -1290,8 +1405,9 @@ function renderCreditInvoicesTable() {
     const creditInvoices = invoices.filter(inv => inv.paymentMethod === "Crédito");
 
     // Calculate summaries
-    const totalPending = creditInvoices.filter(i => i.creditStatus === "Pendiente").reduce((sum, i) => sum + i.total, 0);
-    const shiftRecovered = creditInvoices.filter(i => i.creditStatus === "Pagado" && i.creditPaidClosureId === null).reduce((sum, i) => sum + i.total, 0);
+    const totalPending = creditInvoices.reduce((sum, i) => sum + getCreditInvoiceBalance(i), 0);
+    const recoveredData = getCreditRecoveredTotals(true);
+    const shiftRecovered = recoveredData.cash + recoveredData.noncash;
 
     if (DOM.creditPendingTotal) DOM.creditPendingTotal.textContent = `L ${totalPending.toFixed(2)}`;
     if (DOM.creditShiftRecovered) DOM.creditShiftRecovered.textContent = `L ${shiftRecovered.toFixed(2)}`;
@@ -1307,7 +1423,11 @@ function renderCreditInvoicesTable() {
     let filtered = creditInvoices.slice().reverse();
 
     if (statusVal !== "all") {
-        filtered = filtered.filter(inv => inv.creditStatus === statusVal);
+        if (statusVal === "Pendiente") {
+            filtered = filtered.filter(inv => inv.creditStatus === "Pendiente" || inv.creditStatus === "Parcial");
+        } else {
+            filtered = filtered.filter(inv => inv.creditStatus === statusVal);
+        }
     }
 
     if (query) {
@@ -1325,14 +1445,23 @@ function renderCreditInvoicesTable() {
 
     filtered.forEach(inv => {
         const tr = document.createElement("tr");
-        const statusBadge = inv.creditStatus === "Pagado" 
-            ? `<span class="badge badge-success">Pagado</span>` 
-            : `<span class="badge badge-warning">Pendiente</span>`;
-        const paidDate = inv.creditPaidDate ? `${inv.creditPaidDate} ${inv.creditPaidTime || ""}` : "-";
-        const paidMethod = inv.creditPaidMethod || "-";
+        const totalPaid = getCreditInvoiceTotalPaid(inv);
+        const balance = getCreditInvoiceBalance(inv);
+        
+        let statusBadge = "";
+        if (inv.creditStatus === "Pagado") {
+            statusBadge = `<span class="badge badge-success">Pagado</span>`;
+        } else if (totalPaid > 0) {
+            statusBadge = `<span class="badge badge-warning" style="background-color: #fee2e2; color: #b91c1c;">Parcial</span>`;
+        } else {
+            statusBadge = `<span class="badge badge-danger" style="background-color: #fef3c7; color: #d97706;">Pendiente</span>`;
+        }
+
+        const paidDate = inv.creditPaidDate ? `${inv.creditPaidDate} ${inv.creditPaidTime || ""}` : (inv.creditPayments && inv.creditPayments.length > 0 ? `${inv.creditPayments[inv.creditPayments.length - 1].date} ${inv.creditPayments[inv.creditPayments.length - 1].time || ""}` : "-");
+        const paidMethod = inv.creditPaidMethod || (inv.creditPayments && inv.creditPayments.length > 0 ? inv.creditPayments[inv.creditPayments.length - 1].method : "-");
 
         let actionButton = "";
-        if (inv.creditStatus === "Pendiente") {
+        if (balance > 0) {
             actionButton = `<button class="btn btn-sm btn-success collect-credit-btn" data-id="${inv.id}"><i data-lucide="check-circle-2"></i> Cobrar</button>`;
         }
 
@@ -1340,7 +1469,10 @@ function renderCreditInvoicesTable() {
             <td><strong>${inv.invoiceNumber}</strong></td>
             <td>${inv.date} ${inv.time}</td>
             <td>${inv.customerName}</td>
-            <td><strong>L ${inv.total.toFixed(2)}</strong></td>
+            <td>
+                <strong>L ${inv.total.toFixed(2)}</strong>
+                ${balance > 0 && totalPaid > 0 ? `<br><small style="color: var(--text-muted);">Abonado: L ${totalPaid.toFixed(2)}</small><br><small style="color: var(--color-danger); font-weight: bold;">Saldo: L ${balance.toFixed(2)}</small>` : (balance > 0 ? `<br><small style="color: var(--color-danger); font-weight: bold;">Saldo: L ${balance.toFixed(2)}</small>` : `<br><small style="color: var(--color-success);">Saldado</small>`)}
+            </td>
             <td>${statusBadge}</td>
             <td>${paidDate}</td>
             <td>${paidMethod}</td>
@@ -1376,7 +1508,18 @@ function openCollectCreditModal(invoiceId) {
     if (DOM.collectCreditInvoiceId) DOM.collectCreditInvoiceId.value = inv.id;
     if (DOM.collectInvoiceLabel) DOM.collectInvoiceLabel.textContent = inv.invoiceNumber;
     if (DOM.collectCustomerLabel) DOM.collectCustomerLabel.textContent = inv.customerName;
-    if (DOM.collectAmountLabel) DOM.collectAmountLabel.textContent = `L ${inv.total.toFixed(2)}`;
+
+    const totalPaid = getCreditInvoiceTotalPaid(inv);
+    const balance = getCreditInvoiceBalance(inv);
+
+    if (DOM.collectTotalInvoiceLabel) DOM.collectTotalInvoiceLabel.textContent = `L ${inv.total.toFixed(2)}`;
+    if (DOM.collectTotalPaidLabel) DOM.collectTotalPaidLabel.textContent = `L ${totalPaid.toFixed(2)}`;
+    if (DOM.collectRemainingBalanceLabel) DOM.collectRemainingBalanceLabel.textContent = `L ${balance.toFixed(2)}`;
+
+    if (DOM.collectAmountToPay) {
+        DOM.collectAmountToPay.value = balance.toFixed(2);
+        DOM.collectAmountToPay.setAttribute("max", balance);
+    }
 
     if (DOM.collectCashReceived) DOM.collectCashReceived.value = "";
     if (DOM.collectCashChange) {
@@ -1390,6 +1533,44 @@ function openCollectCreditModal(invoiceId) {
 
     if (DOM.collectCashFields) {
         DOM.collectCashFields.style.display = "block";
+    }
+
+    // Render payments history
+    if (DOM.collectPaymentsHistoryTbody) {
+        DOM.collectPaymentsHistoryTbody.innerHTML = "";
+        
+        let hasPayments = false;
+        if (inv.creditPayments && inv.creditPayments.length > 0) {
+            inv.creditPayments.forEach(p => {
+                const tr = document.createElement("tr");
+                tr.innerHTML = `
+                    <td style="padding: 6px;">${p.date} ${p.time || ""}</td>
+                    <td style="padding: 6px;">${p.method}</td>
+                    <td style="padding: 6px; text-align: right; padding-right: 10px; font-weight: bold;">L ${(p.amount || 0).toFixed(2)}</td>
+                `;
+                DOM.collectPaymentsHistoryTbody.appendChild(tr);
+            });
+            hasPayments = true;
+        } else if (inv.creditStatus === "Pagado") {
+            const tr = document.createElement("tr");
+            const dateStr = inv.creditPaidDate ? `${inv.creditPaidDate} ${inv.creditPaidTime || ""}` : "-";
+            const methodStr = inv.creditPaidMethod || "-";
+            tr.innerHTML = `
+                <td style="padding: 6px;">${dateStr} (Histórico)</td>
+                <td style="padding: 6px;">${methodStr}</td>
+                <td style="padding: 6px; text-align: right; padding-right: 10px; font-weight: bold;">L ${inv.total.toFixed(2)}</td>
+            `;
+            DOM.collectPaymentsHistoryTbody.appendChild(tr);
+            hasPayments = true;
+        }
+
+        if (!hasPayments) {
+            DOM.collectPaymentsHistoryTbody.innerHTML = `
+                <tr>
+                    <td colspan="3" style="text-align: center; padding: 10px; color: #888;">Ningún abono registrado</td>
+                </tr>
+            `;
+        }
     }
 
     if (DOM.modalCollectCredit) {
@@ -1427,23 +1608,23 @@ if (DOM.collectMethod) {
     });
 }
 
-if (DOM.collectCashReceived) {
-    DOM.collectCashReceived.addEventListener("input", () => {
-        const invoiceId = DOM.collectCreditInvoiceId.value;
-        const inv = invoices.find(i => i.id === invoiceId);
-        if (!inv) return;
-
-        const received = parseFloat(DOM.collectCashReceived.value) || 0;
-        const change = received - inv.total;
-        if (change >= 0) {
-            DOM.collectCashChange.textContent = `L ${change.toFixed(2)}`;
-            DOM.collectCashChange.style.color = "var(--color-success)";
-        } else {
-            DOM.collectCashChange.textContent = `Monto Insuficiente`;
-            DOM.collectCashChange.style.color = "var(--color-danger)";
-        }
-    });
+function updateCollectCreditChange() {
+    if (!DOM.collectAmountToPay || !DOM.collectCashReceived || !DOM.collectCashChange) return;
+    const amountToPay = parseFloat(DOM.collectAmountToPay.value) || 0;
+    const received = parseFloat(DOM.collectCashReceived.value) || 0;
+    const change = received - amountToPay;
+    
+    if (change >= 0) {
+        DOM.collectCashChange.textContent = `L ${change.toFixed(2)}`;
+        DOM.collectCashChange.style.color = "var(--color-success)";
+    } else {
+        DOM.collectCashChange.textContent = `Monto Insuficiente`;
+        DOM.collectCashChange.style.color = "var(--color-danger)";
+    }
 }
+
+if (DOM.collectAmountToPay) DOM.collectAmountToPay.addEventListener("input", updateCollectCreditChange);
+if (DOM.collectCashReceived) DOM.collectCashReceived.addEventListener("input", updateCollectCreditChange);
 
 if (DOM.collectCreditForm) {
     DOM.collectCreditForm.addEventListener("submit", (e) => {
@@ -1452,26 +1633,57 @@ if (DOM.collectCreditForm) {
         const inv = invoices.find(i => i.id === invoiceId);
         if (!inv) return;
 
+        const amountToPay = parseFloat(DOM.collectAmountToPay.value) || 0;
+        const balance = getCreditInvoiceBalance(inv);
+
+        if (amountToPay <= 0 || amountToPay > balance) {
+            alert(`El monto a pagar debe ser mayor a 0 y menor o igual al saldo pendiente de L ${balance.toFixed(2)}.`);
+            return;
+        }
+
         const method = DOM.collectMethod.value;
         if (method === "Efectivo") {
             const received = parseFloat(DOM.collectCashReceived.value) || 0;
-            if (received < inv.total) {
+            if (received < amountToPay) {
                 alert("Monto en efectivo recibido es insuficiente.");
                 return;
             }
         }
 
-        inv.creditStatus = "Pagado";
-        inv.creditPaidDate = getHNDateString();
-        inv.creditPaidTime = new Date().toLocaleTimeString("es-HN", { hour12: false });
-        inv.creditPaidMethod = method;
-        inv.creditPaidClosureId = null;
+        const newPayment = {
+            id: "pay_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5),
+            date: getHNDateString(),
+            time: new Date().toLocaleTimeString("es-HN", { hour12: false }),
+            amount: amountToPay,
+            method: method,
+            closureId: null
+        };
+
+        if (!inv.creditPayments) {
+            inv.creditPayments = [];
+        }
+        inv.creditPayments.push(newPayment);
+
+        const newBalance = getCreditInvoiceBalance(inv);
+        if (newBalance <= 0) {
+            inv.creditStatus = "Pagado";
+            inv.creditPaidDate = newPayment.date;
+            inv.creditPaidTime = newPayment.time;
+            inv.creditPaidMethod = newPayment.method;
+            inv.creditPaidClosureId = null;
+        } else {
+            inv.creditStatus = "Parcial";
+            inv.creditPaidDate = null;
+            inv.creditPaidTime = null;
+            inv.creditPaidMethod = null;
+            inv.creditPaidClosureId = null;
+        }
 
         saveToStorage("pr_invoices", invoices);
         cloudSave("invoices", inv.id, inv);
 
         if (DOM.modalCollectCredit) DOM.modalCollectCredit.classList.remove("active");
-        alert("Pago de crédito registrado con éxito.");
+        alert("Pago de crédito (abono) registrado con éxito.");
 
         renderCreditInvoicesTable();
         updateActiveShiftDisplay();
@@ -1700,6 +1912,26 @@ function getTicketHTML(inv, is80mm) {
                 <p style="margin: 1px 0;">Recibido: L ${inv.cashReceived.toFixed(2)}</p>
                 <p style="margin: 1px 0;">Cambio: L ${inv.cashChange.toFixed(2)}</p>
                 ` : ''}
+                ${inv.paymentMethod === "Crédito" ? (() => {
+                    const totalPaid = getCreditInvoiceTotalPaid(inv);
+                    const balance = getCreditInvoiceBalance(inv);
+                    let paymentsListHTML = '';
+                    if (inv.creditPayments && inv.creditPayments.length > 0) {
+                        paymentsListHTML = inv.creditPayments.map(p => `
+                            <p style="margin: 1px 0; font-size: 10px; padding-left: 8px;">- ${p.date}: L ${p.amount.toFixed(2)} (${p.method})</p>
+                        `).join('');
+                    } else if (inv.creditStatus === "Pagado") {
+                        paymentsListHTML = `<p style="margin: 1px 0; font-size: 10px; padding-left: 8px;">- ${inv.creditPaidDate || ''}: L ${inv.total.toFixed(2)} (${inv.creditPaidMethod || ''})</p>`;
+                    }
+                    return `
+                        <div style="margin-top: 4px; border-top: 1px dotted #000; padding-top: 4px;">
+                            <p style="margin: 1px 0; font-weight: bold;">Historial de Pagos:</p>
+                            ${paymentsListHTML || '<p style="margin: 1px 0; font-size: 10px; padding-left: 8px; color: #555;">Ningún abono</p>'}
+                            <p style="margin: 3px 0 1px 0; font-weight: bold; border-top: 1px dotted #000; padding-top: 2px;">Total Abonado: L ${totalPaid.toFixed(2)}</p>
+                            <p style="margin: 1px 0; font-weight: bold; font-size: 12px; color: ${balance > 0 ? '#d97706' : '#15803d'}">SALDO PENDIENTE: L ${balance.toFixed(2)}</p>
+                        </div>
+                    `;
+                })() : ''}
             </div>
 
             <div style="text-align: center; margin-top: 12px; font-size: 10px; border-top: 1px dashed #000; padding-top: 4px;">
@@ -1788,6 +2020,59 @@ function getCartaHTML(inv) {
                     <p style="margin: 4px 0;"><strong>Efectivo Recibido:</strong> L ${inv.cashReceived.toFixed(2)}</p>
                     <p style="margin: 4px 0;"><strong>Cambio / Vuelto:</strong> L ${inv.cashChange.toFixed(2)}</p>
                     ` : ''}
+                    ${inv.paymentMethod === "Crédito" ? (() => {
+                        const totalPaid = getCreditInvoiceTotalPaid(inv);
+                        const balance = getCreditInvoiceBalance(inv);
+                        let rows = '';
+                        if (inv.creditPayments && inv.creditPayments.length > 0) {
+                            rows = inv.creditPayments.map(p => `
+                                <tr>
+                                    <td style="padding: 4px; border-bottom: 1px solid #e2e8f0;">${p.date} ${p.time || ''}</td>
+                                    <td style="padding: 4px; border-bottom: 1px solid #e2e8f0;">${p.method}</td>
+                                    <td style="padding: 4px; border-bottom: 1px solid #e2e8f0; text-align: right;">L ${p.amount.toFixed(2)}</td>
+                                </tr>
+                            `).join('');
+                        } else if (inv.creditStatus === "Pagado") {
+                            rows = `
+                                <tr>
+                                    <td style="padding: 4px; border-bottom: 1px solid #e2e8f0;">${inv.creditPaidDate || ''} ${inv.creditPaidTime || ''} (Histórico)</td>
+                                    <td style="padding: 4px; border-bottom: 1px solid #e2e8f0;">${inv.creditPaidMethod || ''}</td>
+                                    <td style="padding: 4px; border-bottom: 1px solid #e2e8f0; text-align: right;">L ${inv.total.toFixed(2)}</td>
+                                </tr>
+                            `;
+                        } else {
+                            rows = `
+                                <tr>
+                                    <td colspan="3" style="padding: 8px; text-align: center; color: #64748b;">Ningún abono registrado</td>
+                                </tr>
+                            `;
+                        }
+                        return `
+                            <div style="margin-top: 10px; border-top: 1px solid #e2e8f0; padding-top: 8px;">
+                                <span style="font-weight: bold; color: #1e3a8a; display: block; margin-bottom: 4px;">Historial de Abonos:</span>
+                                <table style="width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 6px;">
+                                    <thead>
+                                        <tr style="background-color: #f1f5f9; text-align: left;">
+                                            <th style="padding: 4px;">Fecha</th>
+                                            <th style="padding: 4px;">Método</th>
+                                            <th style="padding: 4px; text-align: right;">Monto</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${rows}
+                                    </tbody>
+                                </table>
+                                <div style="display: flex; justify-content: space-between; font-weight: bold; border-top: 1px solid #cbd5e1; padding-top: 4px; font-size: 11px;">
+                                    <span>Total Abonado:</span>
+                                    <span>L ${totalPaid.toFixed(2)}</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; font-weight: bold; color: ${balance > 0 ? '#ef4444' : '#10b981'}; font-size: 12px; margin-top: 2px;">
+                                    <span>Saldo Restante:</span>
+                                    <span>L ${balance.toFixed(2)}</span>
+                                </div>
+                            </div>
+                        `;
+                    })() : ''}
                     <div style="margin-top: 15px; border-top: 1px dashed #cbd5e1; padding-top: 10px; font-size: 10px; color: #64748b; text-align: center;">
                         <p style="margin: 2px 0; font-weight: bold; color: #1e3a8a;">"La factura es beneficio de todos, ¡exíjala!"</p>
                         <p style="margin: 2px 0;">ORIGINAL: CLIENTE / COPIA: OBLIGADO TRIBUTARIO EMISOR</p>
@@ -1918,8 +2203,9 @@ function updateActiveShiftDisplay() {
     const creditEmit = activeInvoices.filter(i => i.paymentMethod === "Crédito").reduce((sum, i) => sum + i.total, 0);
     
     // Credit collections in this shift
-    const recoveredCash = invoices.filter(i => i.paymentMethod === "Crédito" && i.creditStatus === "Pagado" && i.creditPaidClosureId === null && i.creditPaidMethod === "Efectivo").reduce((sum, i) => sum + i.total, 0);
-    const recoveredNoncash = invoices.filter(i => i.paymentMethod === "Crédito" && i.creditStatus === "Pagado" && i.creditPaidClosureId === null && i.creditPaidMethod !== "Efectivo").reduce((sum, i) => sum + i.total, 0);
+    const recovered = getCreditRecoveredTotals(true);
+    const recoveredCash = recovered.cash;
+    const recoveredNoncash = recovered.noncash;
     
     // Expected Cash = cashDirect + recoveredCash
     const expectedCash = cashDirect + recoveredCash;
@@ -2067,8 +2353,9 @@ if (btnOpenCierreModal) {
         
         // New credit details
         const payCredit = activeInvoices.filter(i => i.paymentMethod === "Crédito").reduce((sum, i) => sum + i.total, 0);
-        const payCreditRecoveredCash = invoices.filter(i => i.paymentMethod === "Crédito" && i.creditStatus === "Pagado" && i.creditPaidClosureId === null && i.creditPaidMethod === "Efectivo").reduce((sum, i) => sum + i.total, 0);
-        const payCreditRecoveredNoncash = invoices.filter(i => i.paymentMethod === "Crédito" && i.creditStatus === "Pagado" && i.creditPaidClosureId === null && i.creditPaidMethod !== "Efectivo").reduce((sum, i) => sum + i.total, 0);
+        const recovered = getCreditRecoveredTotals(true);
+        const payCreditRecoveredCash = recovered.cash;
+        const payCreditRecoveredNoncash = recovered.noncash;
         const totalRecovered = payCreditRecoveredCash + payCreditRecoveredNoncash;
         
         document.getElementById("cierre-modal-total").textContent = `L ${totalNet.toFixed(2)}`;
@@ -2109,7 +2396,7 @@ const actualCashInput = document.getElementById("cierre-actual-cash");
 function recalculateCierreDiff() {
     const activeInvoices = invoices.filter(inv => !inv.closed);
     const payCash = activeInvoices.filter(i => i.paymentMethod === "Efectivo").reduce((sum, i) => sum + i.total, 0);
-    const payCreditRecoveredCash = invoices.filter(i => i.paymentMethod === "Crédito" && i.creditStatus === "Pagado" && i.creditPaidClosureId === null && i.creditPaidMethod === "Efectivo").reduce((sum, i) => sum + i.total, 0);
+    const payCreditRecoveredCash = getCreditRecoveredTotals(true).cash;
     const initialFund = parseFloat(initialFundInput.value) || 0;
     const expectedCash = payCash + payCreditRecoveredCash + initialFund;
     
@@ -2148,9 +2435,10 @@ if (cierreForm) {
         const activeInvoices = invoices.filter(inv => !inv.closed);
         
         // Count recovered credits that need closure assignment
-        const payCreditRecoveredCash = invoices.filter(i => i.paymentMethod === "Crédito" && i.creditStatus === "Pagado" && i.creditPaidClosureId === null && i.creditPaidMethod === "Efectivo").reduce((sum, i) => sum + i.total, 0);
-        const payCreditRecoveredNoncash = invoices.filter(i => i.paymentMethod === "Crédito" && i.creditStatus === "Pagado" && i.creditPaidClosureId === null && i.creditPaidMethod !== "Efectivo").reduce((sum, i) => sum + i.total, 0);
-        const totalRecoveredCount = invoices.filter(i => i.paymentMethod === "Crédito" && i.creditStatus === "Pagado" && i.creditPaidClosureId === null).length;
+        const recoveredTotals = getCreditRecoveredTotals(true);
+        const payCreditRecoveredCash = recoveredTotals.cash;
+        const payCreditRecoveredNoncash = recoveredTotals.noncash;
+        const totalRecoveredCount = recoveredTotals.count;
 
         if (activeInvoices.length === 0 && totalRecoveredCount === 0 && !confirm("No hay ventas ni cobros de crédito registrados en el turno actual. ¿Desea proceder con el cierre de caja de todos modos?")) {
             return;
@@ -2215,13 +2503,28 @@ if (cierreForm) {
         
         // Mark all active invoices as closed, and close/archive recovered credits for this shift
         invoices.forEach(inv => {
+            let modified = false;
             if (!inv.closed) {
                 inv.closed = true;
                 inv.closureId = closureId;
-                cloudSave("invoices", inv.id, inv);
+                modified = true;
             }
-            if (inv.paymentMethod === "Crédito" && inv.creditStatus === "Pagado" && inv.creditPaidClosureId === null) {
-                inv.creditPaidClosureId = closureId;
+            if (inv.paymentMethod === "Crédito") {
+                if (inv.creditPayments && inv.creditPayments.length > 0) {
+                    inv.creditPayments.forEach(p => {
+                        if (p.closureId === null) {
+                            p.closureId = closureId;
+                            modified = true;
+                        }
+                    });
+                }
+                // Handle legacy or full pay archive setting on invoice
+                if (inv.creditStatus === "Pagado" && inv.creditPaidClosureId === null) {
+                    inv.creditPaidClosureId = closureId;
+                    modified = true;
+                }
+            }
+            if (modified) {
                 cloudSave("invoices", inv.id, inv);
             }
         });
@@ -2243,9 +2546,10 @@ if (cierreForm) {
 if (DOM.btnPrintCierre) {
     DOM.btnPrintCierre.addEventListener("click", () => {
         const activeInvoices = invoices.filter(inv => !inv.closed);
-        const payCreditRecoveredCash = invoices.filter(i => i.paymentMethod === "Crédito" && i.creditStatus === "Pagado" && i.creditPaidClosureId === null && i.creditPaidMethod === "Efectivo").reduce((sum, i) => sum + i.total, 0);
-        const payCreditRecoveredNoncash = invoices.filter(i => i.paymentMethod === "Crédito" && i.creditStatus === "Pagado" && i.creditPaidClosureId === null && i.creditPaidMethod !== "Efectivo").reduce((sum, i) => sum + i.total, 0);
-        const totalRecoveredCount = invoices.filter(i => i.paymentMethod === "Crédito" && i.creditStatus === "Pagado" && i.creditPaidClosureId === null).length;
+        const recoveredTotals = getCreditRecoveredTotals(true);
+        const payCreditRecoveredCash = recoveredTotals.cash;
+        const payCreditRecoveredNoncash = recoveredTotals.noncash;
+        const totalRecoveredCount = recoveredTotals.count;
 
         if (activeInvoices.length === 0 && totalRecoveredCount === 0) {
             alert("No hay ventas ni cobros de crédito en el turno activo actual para generar el Reporte Parcial de Caja (X).");

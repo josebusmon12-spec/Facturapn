@@ -515,3 +515,41 @@ html.dark {
         background: transparent !important;
     }
 }
+
+/* --- SPIN ANIMATION FOR REFRESH/CONNECTING ICONS --- */
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+.spin {
+    animation: spin 1.5s linear infinite;
+    display: inline-block;
+}
+
+/* --- CONNECTION STATUS ONLINE ENHANCEMENT --- */
+.sync-status.online {
+    border-color: rgba(16, 185, 129, 0.3) !important;
+    background: rgba(16, 185, 129, 0.08) !important;
+}
+.sync-status.online .sync-text {
+    color: var(--color-success) !important;
+    font-weight: 600;
+}
+
+/* --- POS INDIVIDUAL PRICE SELECTOR --- */
+.cart-price-select {
+    padding: 4px 6px;
+    font-size: 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color);
+    background-color: var(--bg-card);
+    color: var(--text-main);
+    outline: none;
+    cursor: pointer;
+    max-width: 110px;
+    font-family: inherit;
+    transition: border-color var(--transition-fast);
+}
+.cart-price-select:focus {
+    border-color: var(--primary);
+}

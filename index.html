@@ -396,7 +396,7 @@
                     <div class="form-group" style="margin: 0;">
                         <select id="credit-status-filter" class="form-control">
                             <option value="all">Todos los Estados</option>
-                            <option value="Pendiente" selected>Pendiente</option>
+                            <option value="Pendiente" selected>Pendientes / Parciales</option>
                             <option value="Pagado">Pagados</option>
                         </select>
                     </div>
@@ -967,17 +967,55 @@
     <div id="modal-collect-credit" class="modal-backdrop">
         <div class="modal-box">
             <div class="modal-header">
-                <h3>Registrar Pago de Crédito</h3>
+                <h3>Registrar Pago de Crédito (Abono)</h3>
                 <button id="btn-close-collect-credit" class="modal-close-btn">&times;</button>
             </div>
             <form id="collect-credit-form">
                 <div class="modal-body">
                     <input type="hidden" id="collect-credit-invoice-id">
-                    <div style="font-size: 15px; margin-bottom: 15px; text-align: center; border-bottom: 1px dashed var(--border-color); padding-bottom: 10px;">
-                        Factura N°: <strong id="collect-invoice-label">-</strong><br>
-                        Cliente: <strong id="collect-customer-label">-</strong><br>
-                        Monto a Cancelar: <strong id="collect-amount-label" style="color: var(--color-success); font-size: 20px;">L 0.00</strong>
+                    <div style="font-size: 14px; margin-bottom: 15px; border-bottom: 1px dashed var(--border-color); padding-bottom: 10px;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                            <span>Factura N°:</span><strong id="collect-invoice-label">-</strong>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                            <span>Cliente:</span><strong id="collect-customer-label">-</strong>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                            <span>Total Factura:</span><strong id="collect-total-invoice-label">L 0.00</strong>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                            <span>Total Abonado:</span><strong id="collect-total-paid-label" style="color: var(--color-primary);">L 0.00</strong>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 16px;">
+                            <span>Saldo Pendiente:</span><strong id="collect-remaining-balance-label" style="color: var(--color-danger);">L 0.00</strong>
+                        </div>
+                        <span id="collect-amount-label" style="display: none;">L 0.00</span>
                     </div>
+
+                    <!-- Historial de Abonos -->
+                    <div style="margin-bottom: 15px;">
+                        <label style="font-weight: 600; margin-bottom: 6px; display: block;">Historial de Abonos Realizados</label>
+                        <div style="max-height: 120px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 6px; background-color: var(--bg-card);">
+                            <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: left;">
+                                <thead>
+                                    <tr style="background: var(--bg-input); border-bottom: 1px solid var(--border-color);">
+                                        <th style="padding: 6px;">Fecha / Hora</th>
+                                        <th style="padding: 6px;">Método</th>
+                                        <th style="padding: 6px; text-align: right; padding-right: 10px;">Abono</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="collect-payments-history-tbody">
+                                    <!-- Se carga dinámicamente -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="collect-amount-to-pay">Monto a Abonar (L)</label>
+                        <input type="number" id="collect-amount-to-pay" class="form-control" min="0.01" step="any" required placeholder="0.00">
+                    </div>
+
                     <div class="form-group">
                         <label for="collect-method">Método de Pago</label>
                         <select id="collect-method" class="form-control">
@@ -998,7 +1036,7 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" id="btn-cancel-collect-credit" class="btn btn-outline">Cancelar</button>
-                    <button type="submit" class="btn btn-success"><i data-lucide="check-circle-2"></i> Confirmar Pago</button>
+                    <button type="submit" class="btn btn-success"><i data-lucide="check-circle-2"></i> Registrar Abono</button>
                 </div>
             </form>
         </div>
